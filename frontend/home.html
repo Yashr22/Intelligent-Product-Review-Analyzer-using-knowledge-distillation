@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentiment Analyzer Deployment</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8 flex items-center justify-center">
+
+    <div id="app" class="w-full max-w-xl bg-white p-6 sm:p-8 rounded-xl shadow-2xl border border-gray-100">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-2">
+            Sentiment Analyzer
+        </h1>
+        <p class="text-center text-gray-500 mb-8">
+            Analyze your product review using the Distilled LSTM model simulation.
+        </p>
+
+        <!-- Input Area -->
+        <div class="space-y-4 mb-6">
+            <textarea id="reviewInput" 
+                      rows="4" 
+                      placeholder="Write your review here (e.g., 'This feature is amazing and fast!')"
+                      class="w-full p-4 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-gray-700 transition duration-150 ease-in-out shadow-inner"></textarea>
+            
+            <button id="analyzeButton" 
+                    onclick="analyzeSentiment()"
+                    class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 transition duration-150 ease-in-out disabled:opacity-50">
+                Analyze Sentiment
+            </button>
+        </div>
+
+        <!-- Output Area -->
+        <div id="resultContainer" class="hidden mt-6 pt-4 border-t border-gray-200">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Analysis Result</h2>
+            
+            <div id="sentimentDisplay" class="p-4 rounded-lg flex items-center justify-between transition-all duration-300">
+                <!-- Content will be injected here -->
+            </div>
+
+            <p id="confidenceDisplay" class="mt-4 text-sm text-gray-600 text-center">
+                
+            </p>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingIndicator" class="hidden text-center mt-6">
+            <div class="flex items-center justify-center space-x-2">
+                <div class="w-4 h-4 rounded-full bg-blue-600 animate-pulse"></div>
+                <div class="w-4 h-4 rounded-full bg-blue-600 animate-pulse delay-100"></div>
+                <div class="w-4 h-4 rounded-full bg-blue-600 animate-pulse delay-200"></div>
+                <span class="text-gray-500 ml-3">Analyzing...</span>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorDisplay" class="hidden p-4 mt-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            An error occurred during analysis. Please try again.
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+        const API_KEY = ""; // Placeholder for Canvas environment
+
+        const reviewInput = document.getElementById('reviewInput');
+        const analyzeButton = document.getElementById('analyzeButton');
+        const resultContainer = document.getElementById('resultContainer');
+        const sentimentDisplay = document.getElementById('sentimentDisplay');
+        const confidenceDisplay = document.getElementById('confidenceDisplay');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const errorDisplay = document.getElementById('errorDisplay');
+
+        // Mapping for colors and icons
+        const sentimentStyles = {
+            'Positive': { bg: 'bg-green-100', text: 'text-green-800', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+            'Neutral': { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: 'M10 14l2-2m0 0l2 2m-2-2v2m-2 0h4m-4 0a9 9 0 11-18 0 9 9 0 0118 0z' },
+            'Negative': { bg: 'bg-red-100', text: 'text-red-800', icon: 'M10 14l2-2m0 0l2 2m-2-2v2m-2 0h4m-4 0a9 9 0 11-18 0 9 9 0 0118 0z' }
+        };
+
+        function showLoading(state) {
+            loadingIndicator.classList.toggle('hidden', !state);
+            analyzeButton.disabled = state;
+            analyzeButton.textContent = state ? 'Analyzing...' : 'Analyze Sentiment';
+            resultContainer.classList.add('hidden');
+            errorDisplay.classList.add('hidden');
+        }
+
+        function displayResult(sentiment, confidence) {
+            const style = sentimentStyles[sentiment] || sentimentStyles['Neutral'];
+
+            // Update main result display background/text
+            sentimentDisplay.className = `p-4 rounded-lg flex items-center justify-between transition-all duration-300 ${style.bg} ${style.text}`;
+            
+            // Build content HTML
+            sentimentDisplay.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${style.icon}"></path>
+                    </svg>
+                    <span class="text-2xl font-bold">${sentiment}</span>
+                </div>
+                <span class="text-lg font-mono px-3 py-1 rounded-full ${style.text.replace('-800', '-700')} bg-opacity-30">
+                    ${(confidence * 100).toFixed(1)}%
+                </span>
+            `;
+
+            confidenceDisplay.textContent = `The model predicts the review is ${sentiment} with a confidence of ${(confidence * 100).toFixed(1)}%.`;
+            resultContainer.classList.remove('hidden');
+        }
+
+        async function analyzeSentiment() {
+            const reviewText = reviewInput.value.trim();
+            if (reviewText.length < 5) {
+                errorDisplay.textContent = "Please enter a review of at least 5 characters.";
+                errorDisplay.classList.remove('hidden');
+                return;
+            }
+
+            showLoading(true);
+            let attempts = 0;
+            const maxAttempts = 3;
+
+            // System Instruction guides the LLM to act as the trained model
+            const systemPrompt = "You are a specialized Sentiment Analysis Model. Your task is to analyze the user-provided text (a product review) and classify its sentiment as either 'Positive', 'Neutral', or 'Negative'. Return the result strictly in JSON format with two fields: 'sentiment' (one of the three classes) and 'confidence' (a float between 0.5 and 1.0). Do not include any other text or markdown outside the JSON block.";
+
+            const payload = {
+                contents: [{ parts: [{ text: `Analyze the sentiment of this review: "${reviewText}"` }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            "sentiment": { "type": "STRING", "enum": ["Positive", "Neutral", "Negative"] },
+                            "confidence": { "type": "NUMBER" }
+                        },
+                        required: ["sentiment", "confidence"]
+                    }
+                }
+            };
+            
+            while (attempts < maxAttempts) {
+                try {
+                    const response = await fetch(API_URL + API_KEY, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (!jsonText) {
+                        throw new Error("Received empty or malformed response from API.");
+                    }
+
+                    const parsedJson = JSON.parse(jsonText);
+                    
+                    const sentiment = parsedJson.sentiment;
+                    let confidence = parsedJson.confidence;
+                    
+                    // Clamp confidence to a reasonable range if necessary (e.g., if model returns 1.0 all the time)
+                    confidence = Math.max(0.5, Math.min(1.0, confidence));
+
+                    if (['Positive', 'Neutral', 'Negative'].includes(sentiment)) {
+                        displayResult(sentiment, confidence);
+                        showLoading(false);
+                        return;
+                    } else {
+                        throw new Error("Invalid sentiment class returned.");
+                    }
+
+                } catch (e) {
+                    console.error("Prediction attempt failed:", e);
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempts))); // Exponential backoff
+                    }
+                }
+            }
+
+            // Failed after all attempts
+            showLoading(false);
+            errorDisplay.textContent = "Failed to analyze sentiment after multiple attempts. Please check the console for details.";
+            errorDisplay.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
