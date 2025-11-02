@@ -1,4 +1,4 @@
-# Sentiment Analysis LSTM Model
+# Intelligent Product Review Analyzer using knowledge distillation
 
 A lightweight LSTM model for sentiment analysis, optimized for a size of 5-10 MB.
 
