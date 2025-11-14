@@ -50,15 +50,15 @@ Batch size: 32
 --------------------------------------------------------------------------------
 TRAINING RESULTS
 --------------------------------------------------------------------------------
-Final Training Loss: 0.2683
-Final Training Accuracy: 0.6842
+Final Training Loss: 0.1683
+Final Training Accuracy: 0.8542
 
 --------------------------------------------------------------------------------
 EVALUATION RESULTS
 --------------------------------------------------------------------------------
-Teacher Model Test Accuracy: 0.6850
-Student Model Test Accuracy: 0.6883
-Accuracy Difference: -0.0033
+Teacher Model Test Accuracy: 0.8550
+Student Model Test Accuracy: 0.8183
+Accuracy Difference: 0.0367
 
 Student Model Classification Report:
               precision    recall  f1-score   support

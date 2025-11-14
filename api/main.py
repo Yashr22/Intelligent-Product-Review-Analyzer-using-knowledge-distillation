@@ -1,94 +1,51 @@
-import tensorflow as tf # Import TensorFlow
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 from tensorflow.keras.preprocessing.sequence import pad_sequences
-import numpy as np
 import pickle
-from starlette.middleware.cors import CORSMiddleware # Required for CORSMiddleware
-
-# --- Configuration ---
-MAX_SEQUENCE_LENGTH = 100 # IMPORTANT: Must match your training parameter
-SENTIMENT_MAP = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
-
-# --- Global Asset Loading ---
-# Initialize variables
-MODEL = None
-tokenizer = None
-
-try:
-    print("Loading LSTM model and tokenizer...")
-    # Load the model using the imported function
-    MODEL = load_model('sentiment_lstm_model.h5') 
-    
-    with open('tokenizer.pickle', 'rb') as handle:
-        tokenizer = pickle.load(handle)
-    print("Model and tokenizer loaded successfully.")
-    
-except Exception as e:
-    print(f"FATAL ERROR: Could not load model or tokenizer. Prediction will fail. Details: {e}")
-    # In a production environment, you would typically stop the server here.
+import numpy as np
+import os
 
 
-app = FastAPI(title="LSTM Sentiment Predictor")
+# ---------- Initialize FastAPI ----------
+app = FastAPI(title="Sentiment Analysis API", version="1.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], # Allows all origins for frontend testing
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ---------- Load Model and Tokenizer ----------
+MODEL_PATH = "../artifacts/student_lstm_model.h5"
+TOKENIZER_PATH = "../artifacts/tokenizer.pkl"
 
-# New GET endpoint to confirm the server is running
+
+# Load the trained model
+model = tf.keras.models.load_model(MODEL_PATH)
+
+# ---------- Load Tokenizer ----------
+with open(TOKENIZER_PATH, "rb") as handle:
+    tokenizer = pickle.load(handle)
+
+
+max_len = 100  # same as used during training
+
+# ---------- Request Schema ----------
+class ReviewRequest(BaseModel):
+    text: str
+
+# ---------- API Routes ----------
 @app.get("/")
-def read_root():
-    """Simple health check endpoint."""
-    return {"status": "ok", "message": "FastAPI server is running. Use /analyze-review for predictions."}
+def home():
+    return {"message": "Welcome to Sentiment Analysis API 🚀"}
 
+@app.post("/predict/")
+def predict_sentiment(review: ReviewRequest):
+    # Convert text to sequence
+    sequence = tokenizer.texts_to_sequences([review.text])
+    padded = pad_sequences(sequence, maxlen=max_len, padding='post', truncating='post')
 
-# Define the expected input structure for the API
-class ReviewInput(BaseModel):
-    review_text: str
+    # Predict sentiment
+    prediction = model.predict(padded)
+    sentiment = np.argmax(prediction, axis=1)[0]
 
-# --- Prediction Endpoint ---
-@app.post("/analyze-review")
-def analyze(input_data: ReviewInput):
-    # 1. Check if assets loaded successfully
-    if MODEL is None or tokenizer is None:
-        # Raise a 500 error if assets are missing
-        raise HTTPException(status_code=500, detail="Server failed to load ML assets.")
+    # Map numeric label to text
+    labels = {0: "Negative", 1: "Neutral", 2: "Positive"}
+    result = labels.get(sentiment, "Unknown")
 
-    # 2. Pre-processing: Tokenize and Pad Sequence
-    review = input_data.review_text
-    
-    # Tokenize the text using the loaded tokenizer
-    sequence = tokenizer.texts_to_sequences([review])
-    
-    # Pad the sequence to the fixed length
-    padded_sequence = pad_sequences(sequence, 
-                                    maxlen=MAX_SEQUENCE_LENGTH, 
-                                    padding='post')
-
-    # 3. Prediction
-    # The output will be an array like [[prob_neg, prob_neut, prob_pos]]
-    # verbose=0 prevents progress bar output in the console
-    raw_prediction = MODEL.predict(padded_sequence, verbose=0)
-    
-    # 4. Post-processing: Get the most likely class index
-    # np.argmax finds the index (0, 1, or 2) with the highest probability
-    predicted_index = np.argmax(raw_prediction, axis=1)[0]
-    
-    # Get the confidence (the probability of the predicted class)
-    confidence = raw_prediction[0][predicted_index]
-    
-    # 5. Map index to label
-    sentiment_label = SENTIMENT_MAP.get(predicted_index, "Unknown")
-    
-    # 6. Return the result
-    return {
-        "input_review": review,
-        "sentiment": sentiment_label,
-        "sentiment_code": int(predicted_index),
-        "confidence": float(confidence)
-    }
+    return {"review": review.text, "sentiment": result}
